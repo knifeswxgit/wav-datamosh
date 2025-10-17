@@ -241,12 +241,15 @@ function smartDatamosh(audio1, audio2, intensity, glitchSize, bitDepth = 16) {
                 const glitchType = Math.random();
                 let newValue;
                 
+                // ВАЖНО: Снижаем громкость глитчей на 50%
+                const volumeReduction = 0.5;
+                
                 if (glitchType < 0.7) {
-                    newValue = samples2[srcIdx];
+                    newValue = Math.floor(samples2[srcIdx] * volumeReduction);
                 } else if (glitchType < 0.95) {
-                    newValue = Math.floor((samples1[startPos + j] + samples2[srcIdx]) / 2);
+                    newValue = Math.floor((samples1[startPos + j] + samples2[srcIdx] * volumeReduction) / 2);
                 } else {
-                    newValue = samples2[srcIdx] ^ 0x00FF;
+                    newValue = Math.floor((samples2[srcIdx] ^ 0x00FF) * volumeReduction);
                 }
                 
                 // Применяем fade и ограничиваем громкость
@@ -254,7 +257,14 @@ function smartDatamosh(audio1, audio2, intensity, glitchSize, bitDepth = 16) {
                     samples1[startPos + j] * (1 - mixAmount) + newValue * mixAmount
                 );
                 
-                resultSamples[startPos + j] = Math.max(minValue, Math.min(maxValue, mixed));
+                // Дополнительное ограничение громкости (soft clipping)
+                let finalValue = mixed;
+                if (Math.abs(mixed) > maxValue * 0.8) {
+                    // Мягкое ограничение для громких пиков
+                    finalValue = Math.floor(mixed * 0.7);
+                }
+                
+                resultSamples[startPos + j] = Math.max(minValue, Math.min(maxValue, finalValue));
             }
         }
     }
