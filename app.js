@@ -222,46 +222,54 @@ function smartDatamosh(audio1, audio2, intensity, glitchSize, bitDepth = 16) {
         // Случайная позиция из второго файла
         const sourcePos = Math.floor(Math.random() * Math.max(1, samples2.length - glitchLength));
         
-        // Размер fade (10% от длины глитча, минимум 100 сэмплов)
-        const fadeLength = Math.max(100, Math.floor(glitchLength * 0.1));
+        // Размер fade (30% от длины глитча, минимум 500 сэмплов для заметного эффекта)
+        const fadeLength = Math.max(500, Math.floor(glitchLength * 0.3));
         
         if (sourcePos >= 0 && sourcePos < samples2.length) {
             for (let j = 0; j < glitchLength && startPos + j < endPos; j++) {
                 const srcIdx = Math.min(sourcePos + j, samples2.length - 1);
                 
                 // Плавный fade in/out (косинусная кривая)
-                let mixAmount = 1.0;
+                let fadeMultiplier = 1.0;
                 if (j < fadeLength) {
-                    mixAmount = (1 - Math.cos((j / fadeLength) * Math.PI)) / 2;
+                    // Fade in - плавное нарастание
+                    fadeMultiplier = (1 - Math.cos((j / fadeLength) * Math.PI)) / 2;
                 } else if (j > glitchLength - fadeLength) {
-                    mixAmount = (1 + Math.cos(((j - (glitchLength - fadeLength)) / fadeLength) * Math.PI)) / 2;
+                    // Fade out - плавное затухание
+                    fadeMultiplier = (1 + Math.cos(((j - (glitchLength - fadeLength)) / fadeLength) * Math.PI)) / 2;
                 }
+                
+                // mixAmount теперь зависит от fade
+                let mixAmount = fadeMultiplier;
                 
                 // Выбираем тип глитча
                 const glitchType = Math.random();
-                let newValue;
+                let glitchValue;
                 
-                // ВАЖНО: Снижаем громкость глитчей на 50%
-                const volumeReduction = 0.5;
+                // ВАЖНО: Снижаем громкость глитчей на 60%
+                const volumeReduction = 0.4;
                 
                 if (glitchType < 0.7) {
-                    newValue = Math.floor(samples2[srcIdx] * volumeReduction);
+                    glitchValue = Math.floor(samples2[srcIdx] * volumeReduction);
                 } else if (glitchType < 0.95) {
-                    newValue = Math.floor((samples1[startPos + j] + samples2[srcIdx] * volumeReduction) / 2);
+                    glitchValue = Math.floor((samples1[startPos + j] * 0.5 + samples2[srcIdx] * volumeReduction * 0.5));
                 } else {
-                    newValue = Math.floor((samples2[srcIdx] ^ 0x00FF) * volumeReduction);
+                    glitchValue = Math.floor((samples2[srcIdx] ^ 0x00FF) * volumeReduction);
                 }
                 
-                // Применяем fade и ограничиваем громкость
+                // Применяем fade - плавное смешивание оригинала и глитча
+                const originalValue = samples1[startPos + j];
                 const mixed = Math.floor(
-                    samples1[startPos + j] * (1 - mixAmount) + newValue * mixAmount
+                    originalValue * (1 - mixAmount) + glitchValue * mixAmount
                 );
                 
                 // Дополнительное ограничение громкости (soft clipping)
                 let finalValue = mixed;
-                if (Math.abs(mixed) > maxValue * 0.8) {
+                const threshold = maxValue * 0.75;
+                if (Math.abs(mixed) > threshold) {
                     // Мягкое ограничение для громких пиков
-                    finalValue = Math.floor(mixed * 0.7);
+                    const sign = mixed > 0 ? 1 : -1;
+                    finalValue = Math.floor(sign * (threshold + (Math.abs(mixed) - threshold) * 0.3));
                 }
                 
                 resultSamples[startPos + j] = Math.max(minValue, Math.min(maxValue, finalValue));
