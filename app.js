@@ -300,7 +300,7 @@ function findInterestingPoints(audio, count) {
 
 
 
-// НАСТОЯЩИЙ ДАТАМОШ - как в видео, но для аудио!
+// НАСТОЯЩИЙ ДАТАМОШ - музыкальное смешивание файлов
 function realDatamosh(audio1, audio2, intensity, glitchSize, bitDepth = 16) {
     // Работаем с 16-битными сэмплами
     const samples1 = new Int16Array(audio1.buffer, audio1.byteOffset, audio1.length / 2);
@@ -308,86 +308,66 @@ function realDatamosh(audio1, audio2, intensity, glitchSize, bitDepth = 16) {
     const result = new Int16Array(samples1.length);
     result.set(samples1);
     
-    // Размеры "блоков" для датамоша (как I-frames в видео)
+    // Размеры блоков для датамоша
     const blockSizes = {
-        1: [2000, 8000],      // Small: короткие блоки
-        2: [8000, 25000],     // Medium: средние блоки
-        3: [25000, 60000]     // Large: длинные блоки
+        1: [5000, 15000],      // Small: ~0.11-0.34 сек
+        2: [15000, 40000],     // Medium: ~0.34-0.91 сек
+        3: [40000, 90000]      // Large: ~0.91-2.04 сек
     };
     
     const [minBlock, maxBlock] = blockSizes[glitchSize];
-    const datamoshAmount = Math.floor((intensity / 100) * 40) + 10; // 10-50 датамошей
+    const numBlocks = Math.floor((intensity / 100) * 30) + 5; // 5-35 блоков
     
-    for (let d = 0; d < datamoshAmount; d++) {
-        // Выбираем случайный блок из первого файла
+    for (let b = 0; b < numBlocks; b++) {
         const blockLength = Math.floor(Math.random() * (maxBlock - minBlock)) + minBlock;
         const startPos = Math.floor(Math.random() * Math.max(1, samples1.length - blockLength));
-        
-        // Выбираем откуда брать "движение" из второго файла
         const sourcePos = Math.floor(Math.random() * Math.max(1, samples2.length - blockLength));
         
-        // Эффект "размазывания" - как в видео датамоше
-        const smearLength = Math.floor(blockLength * 0.3); // 30% блока размазываем
+        // Длинный fade для плавности (20% блока)
+        const fadeLength = Math.floor(blockLength * 0.2);
+        
+        // Выбираем один режим для всего блока
+        const mode = Math.random();
         
         for (let i = 0; i < blockLength && startPos + i < result.length; i++) {
             const srcIdx = Math.min(sourcePos + i, samples2.length - 1);
             
-            // Разные техники датамоша
-            const technique = Math.random();
+            // Вычисляем fade (косинусная кривая)
+            let fadeFactor = 1.0;
+            if (i < fadeLength) {
+                // Fade in
+                fadeFactor = (1 - Math.cos((i / fadeLength) * Math.PI)) / 2;
+            } else if (i > blockLength - fadeLength) {
+                // Fade out
+                fadeFactor = (1 + Math.cos(((i - (blockLength - fadeLength)) / fadeLength) * Math.PI)) / 2;
+            }
             
-            if (i < smearLength) {
-                // SMEAR - размазываем начало (как motion blur)
-                const smearFactor = i / smearLength;
-                const prev = i > 0 ? result[startPos + i - 1] : samples1[startPos];
-                result[startPos + i] = Math.floor(
-                    prev * (1 - smearFactor) + samples2[srcIdx] * smearFactor * 0.6
+            let newSample;
+            
+            if (mode < 0.5) {
+                // Режим 1: Прямая замена с fade и снижением громкости
+                newSample = Math.floor(samples2[srcIdx] * 0.5); // Тише на 50%
+            } else if (mode < 0.8) {
+                // Режим 2: Плавное смешивание
+                newSample = Math.floor(
+                    (samples1[startPos + i] * 0.5 + samples2[srcIdx] * 0.5)
                 );
-            } else if (technique < 0.4) {
-                // BLEND - смешиваем два источника (как P-frames)
-                result[startPos + i] = Math.floor(
-                    (samples1[startPos + i] * 0.4 + samples2[srcIdx] * 0.6)
-                );
-            } else if (technique < 0.7) {
-                // ECHO - создаем эхо эффект
-                const echoDelay = Math.floor(Math.random() * 1000) + 100;
-                const echoPos = Math.max(0, startPos + i - echoDelay);
-                result[startPos + i] = Math.floor(
-                    (samples2[srcIdx] * 0.7 + result[echoPos] * 0.3)
-                );
-            } else if (technique < 0.85) {
-                // REPEAT - повторяем предыдущий сэмпл (как застывший кадр)
-                if (i > 0) {
-                    result[startPos + i] = result[startPos + i - 1];
-                }
             } else {
-                // CORRUPT - легкое искажение (битовые операции)
-                const corrupted = samples2[srcIdx] ^ (Math.floor(Math.random() * 16));
-                result[startPos + i] = Math.floor(
-                    (samples1[startPos + i] * 0.3 + corrupted * 0.7)
+                // Режим 3: Эхо эффект
+                const echoDelay = 500;
+                const echoPos = Math.max(0, startPos + i - echoDelay);
+                newSample = Math.floor(
+                    (samples2[srcIdx] * 0.6 + samples1[echoPos] * 0.4)
                 );
             }
             
-            // Ограничиваем значения
+            // Применяем fade
+            result[startPos + i] = Math.floor(
+                samples1[startPos + i] * (1 - fadeFactor) + newSample * fadeFactor
+            );
+            
+            // Ограничиваем для предотвращения клиппинга
             result[startPos + i] = Math.max(-32768, Math.min(32767, result[startPos + i]));
-        }
-        
-        // Добавляем fade на границах для плавности
-        const fadeLen = Math.min(300, Math.floor(blockLength * 0.05));
-        for (let f = 0; f < fadeLen; f++) {
-            if (startPos + f < result.length) {
-                const fadeFactor = f / fadeLen;
-                result[startPos + f] = Math.floor(
-                    samples1[startPos + f] * (1 - fadeFactor) + result[startPos + f] * fadeFactor
-                );
-            }
-            
-            const endIdx = startPos + blockLength - f - 1;
-            if (endIdx >= 0 && endIdx < result.length) {
-                const fadeFactor = f / fadeLen;
-                result[endIdx] = Math.floor(
-                    result[endIdx] * (1 - fadeFactor) + samples1[endIdx] * fadeFactor
-                );
-            }
         }
     }
     
