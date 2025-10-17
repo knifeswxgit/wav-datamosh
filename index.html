@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>WAV Datamosh</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1 class="glitch" data-text="WAV DATAMOSH">WAV DATAMOSH</h1>
+            <p class="subtitle">Glitch your audio files</p>
+        </header>
+
+        <div class="upload-section">
+            <div class="file-input-wrapper">
+                <label for="file1" class="file-label">
+                    <div class="file-icon">📁</div>
+                    <span id="file1-name">Select WAV File 1</span>
+                </label>
+                <input type="file" id="file1" accept=".wav,audio/wav" />
+            </div>
+
+            <div class="file-input-wrapper">
+                <label for="file2" class="file-label">
+                    <div class="file-icon">📁</div>
+                    <span id="file2-name">Select WAV File 2</span>
+                </label>
+                <input type="file" id="file2" accept=".wav,audio/wav" />
+            </div>
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <label>Glitch Method</label>
+                <select id="method">
+                    <option value="hex-swap">Hex Swap</option>
+                    <option value="byte-replace">Byte Replace</option>
+                    <option value="chunk-mix">Chunk Mix</option>
+                    <option value="header-corrupt">Header Corrupt</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label>Intensity: <span id="intensity-value">50</span>%</label>
+                <input type="range" id="intensity" min="1" max="100" value="50" />
+            </div>
+        </div>
+
+        <button id="process-btn" class="process-btn" disabled>
+            <span class="btn-text">DATAMOSH IT</span>
+        </button>
+
+        <div id="result" class="result hidden">
+            <div class="result-info">
+                <p>✓ Glitched successfully!</p>
+            </div>
+            <button id="download-btn" class="download-btn">
+                <span>⬇ Download Result</span>
+            </button>
+        </div>
+
+        <div id="loading" class="loading hidden">
+            <div class="spinner"></div>
+            <p>Processing...</p>
+        </div>
+    </div>
+
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>
