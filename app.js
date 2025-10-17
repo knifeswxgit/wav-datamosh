@@ -126,16 +126,13 @@ async function datamoshWav(buffer1, buffer2, intensity, glitchSize) {
     
     console.log(`File 1: ${bitDepth1}-bit, File 2: ${bitDepth2}-bit`);
     
-    // Используем битность первого файла
-    const bitDepth = bitDepth1;
-    
     // Parse WAV headers
     const header1 = data1.slice(0, 44);
     const audio1 = data1.slice(44);
     const audio2 = data2.slice(44);
     
-    // Используем только chunk-mix
-    const result = chunkMix(audio1, audio2, intensity, glitchSize);
+    // Настоящий датамош!
+    const result = realDatamosh(audio1, audio2, intensity, glitchSize, bitDepth1);
     
     // Combine header with processed audio
     const finalData = new Uint8Array(header1.length + result.length);
@@ -303,38 +300,98 @@ function findInterestingPoints(audio, count) {
 
 
 
-function chunkMix(audio1, audio2, intensity, glitchSize) {
-    const result = new Uint8Array(audio1.length);
+// НАСТОЯЩИЙ ДАТАМОШ - как в видео, но для аудио!
+function realDatamosh(audio1, audio2, intensity, glitchSize, bitDepth = 16) {
+    // Работаем с 16-битными сэмплами
+    const samples1 = new Int16Array(audio1.buffer, audio1.byteOffset, audio1.length / 2);
+    const samples2 = new Int16Array(audio2.buffer, audio2.byteOffset, audio2.length / 2);
+    const result = new Int16Array(samples1.length);
+    result.set(samples1);
     
-    // Размер кусков зависит от glitchSize
-    const baseSizes = {
-        1: 500,
-        2: 2000,
-        3: 5000
+    // Размеры "блоков" для датамоша (как I-frames в видео)
+    const blockSizes = {
+        1: [2000, 8000],      // Small: короткие блоки
+        2: [8000, 25000],     // Medium: средние блоки
+        3: [25000, 60000]     // Large: длинные блоки
     };
-    const baseChunkSize = baseSizes[glitchSize];
-    const chunkSize = Math.max(100, Math.floor(baseChunkSize / (intensity / 50)));
     
-    let useFile1 = true;
+    const [minBlock, maxBlock] = blockSizes[glitchSize];
+    const datamoshAmount = Math.floor((intensity / 100) * 40) + 10; // 10-50 датамошей
     
-    for (let i = 0; i < audio1.length; i += chunkSize) {
-        const end = Math.min(i + chunkSize, audio1.length);
-        const source = useFile1 ? audio1 : audio2;
+    for (let d = 0; d < datamoshAmount; d++) {
+        // Выбираем случайный блок из первого файла
+        const blockLength = Math.floor(Math.random() * (maxBlock - minBlock)) + minBlock;
+        const startPos = Math.floor(Math.random() * Math.max(1, samples1.length - blockLength));
         
-        for (let j = i; j < end; j++) {
-            if (j < source.length) {
-                result[j] = source[j];
+        // Выбираем откуда брать "движение" из второго файла
+        const sourcePos = Math.floor(Math.random() * Math.max(1, samples2.length - blockLength));
+        
+        // Эффект "размазывания" - как в видео датамоше
+        const smearLength = Math.floor(blockLength * 0.3); // 30% блока размазываем
+        
+        for (let i = 0; i < blockLength && startPos + i < result.length; i++) {
+            const srcIdx = Math.min(sourcePos + i, samples2.length - 1);
+            
+            // Разные техники датамоша
+            const technique = Math.random();
+            
+            if (i < smearLength) {
+                // SMEAR - размазываем начало (как motion blur)
+                const smearFactor = i / smearLength;
+                const prev = i > 0 ? result[startPos + i - 1] : samples1[startPos];
+                result[startPos + i] = Math.floor(
+                    prev * (1 - smearFactor) + samples2[srcIdx] * smearFactor * 0.6
+                );
+            } else if (technique < 0.4) {
+                // BLEND - смешиваем два источника (как P-frames)
+                result[startPos + i] = Math.floor(
+                    (samples1[startPos + i] * 0.4 + samples2[srcIdx] * 0.6)
+                );
+            } else if (technique < 0.7) {
+                // ECHO - создаем эхо эффект
+                const echoDelay = Math.floor(Math.random() * 1000) + 100;
+                const echoPos = Math.max(0, startPos + i - echoDelay);
+                result[startPos + i] = Math.floor(
+                    (samples2[srcIdx] * 0.7 + result[echoPos] * 0.3)
+                );
+            } else if (technique < 0.85) {
+                // REPEAT - повторяем предыдущий сэмпл (как застывший кадр)
+                if (i > 0) {
+                    result[startPos + i] = result[startPos + i - 1];
+                }
             } else {
-                result[j] = audio1[j];
+                // CORRUPT - легкое искажение (битовые операции)
+                const corrupted = samples2[srcIdx] ^ (Math.floor(Math.random() * 16));
+                result[startPos + i] = Math.floor(
+                    (samples1[startPos + i] * 0.3 + corrupted * 0.7)
+                );
             }
+            
+            // Ограничиваем значения
+            result[startPos + i] = Math.max(-32768, Math.min(32767, result[startPos + i]));
         }
         
-        if (Math.random() < intensity / 100) {
-            useFile1 = !useFile1;
+        // Добавляем fade на границах для плавности
+        const fadeLen = Math.min(300, Math.floor(blockLength * 0.05));
+        for (let f = 0; f < fadeLen; f++) {
+            if (startPos + f < result.length) {
+                const fadeFactor = f / fadeLen;
+                result[startPos + f] = Math.floor(
+                    samples1[startPos + f] * (1 - fadeFactor) + result[startPos + f] * fadeFactor
+                );
+            }
+            
+            const endIdx = startPos + blockLength - f - 1;
+            if (endIdx >= 0 && endIdx < result.length) {
+                const fadeFactor = f / fadeLen;
+                result[endIdx] = Math.floor(
+                    result[endIdx] * (1 - fadeFactor) + samples1[endIdx] * fadeFactor
+                );
+            }
         }
     }
     
-    return result;
+    return new Uint8Array(result.buffer);
 }
 
 // Show main button in Telegram
