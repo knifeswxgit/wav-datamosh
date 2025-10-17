@@ -144,44 +144,62 @@ async function datamoshWav(buffer1, buffer2, method, intensity, glitchSize) {
     return new Blob([finalData], { type: 'audio/wav' });
 }
 
-// Smart Datamosh - анализирует аудио и создает музыкальные глитчи
+// Smart Datamosh - агрессивно смешивает файлы с музыкальными глитчами
 function smartDatamosh(audio1, audio2, intensity, glitchSize) {
     const result = new Uint8Array(audio1.length);
     result.set(audio1);
     
-    // Размеры глитчей в зависимости от настройки
+    // Размеры глитчей в зависимости от настройки (намного больше!)
     const glitchSizes = {
-        1: [200, 800],      // Small: короткие глитчи
-        2: [800, 3000],     // Medium: средние глитчи
-        3: [3000, 8000]     // Large: длинные глитчи
+        1: [5000, 20000],      // Small: короткие куски
+        2: [20000, 80000],     // Medium: средние куски
+        3: [80000, 200000]     // Large: длинные куски
     };
     
     const [minSize, maxSize] = glitchSizes[glitchSize];
-    const numGlitches = Math.floor((intensity / 100) * 50); // До 50 глитчей
     
-    // Находим "интересные" места в аудио (где амплитуда меняется)
-    const interestingPoints = findInterestingPoints(audio1, numGlitches * 3);
+    // Намного больше глитчей в зависимости от интенсивности
+    const numGlitches = Math.floor((intensity / 100) * 100) + 20; // От 20 до 120 глитчей
+    
+    // Находим "интересные" места в аудио
+    const interestingPoints = findInterestingPoints(audio1, numGlitches * 2);
     
     for (let i = 0; i < numGlitches; i++) {
-        // Выбираем случайную интересную точку
-        const pointIndex = Math.floor(Math.random() * interestingPoints.length);
-        const startPos = interestingPoints[pointIndex];
+        // Выбираем случайную интересную точку или просто случайную
+        let startPos;
+        if (Math.random() < 0.7 && interestingPoints.length > 0) {
+            const pointIndex = Math.floor(Math.random() * interestingPoints.length);
+            startPos = interestingPoints[pointIndex];
+        } else {
+            startPos = Math.floor(Math.random() * audio1.length);
+        }
         
         // Случайный размер глитча
         const glitchLength = Math.floor(Math.random() * (maxSize - minSize)) + minSize;
         const endPos = Math.min(startPos + glitchLength, audio1.length);
         
         // Случайная позиция из второго файла
-        const sourcePos = Math.floor(Math.random() * (audio2.length - glitchLength));
+        const sourcePos = Math.floor(Math.random() * Math.max(1, audio2.length - glitchLength));
         
         // Копируем кусок из второго файла
-        if (sourcePos >= 0 && sourcePos + glitchLength <= audio2.length) {
+        if (sourcePos >= 0 && sourcePos < audio2.length) {
             for (let j = 0; j < glitchLength && startPos + j < endPos; j++) {
-                // Иногда делаем hex-манипуляции для дополнительного эффекта
-                if (Math.random() < 0.3) {
-                    result[startPos + j] = audio2[sourcePos + j] ^ 0xFF; // XOR для глитча
+                const srcIdx = Math.min(sourcePos + j, audio2.length - 1);
+                
+                // Разные типы hex-манипуляций для разнообразия
+                const glitchType = Math.random();
+                if (glitchType < 0.5) {
+                    // Прямая замена
+                    result[startPos + j] = audio2[srcIdx];
+                } else if (glitchType < 0.7) {
+                    // XOR для глитча
+                    result[startPos + j] = audio2[srcIdx] ^ 0xFF;
+                } else if (glitchType < 0.85) {
+                    // Смешивание двух файлов
+                    result[startPos + j] = (audio1[startPos + j] + audio2[srcIdx]) >> 1;
                 } else {
-                    result[startPos + j] = audio2[sourcePos + j];
+                    // Битовый сдвиг
+                    result[startPos + j] = (audio2[srcIdx] << 1) | (audio2[srcIdx] >> 7);
                 }
             }
         }
@@ -193,13 +211,16 @@ function smartDatamosh(audio1, audio2, intensity, glitchSize) {
 // Находит точки с большими изменениями амплитуды (биты, удары)
 function findInterestingPoints(audio, count) {
     const points = [];
-    const stepSize = Math.floor(audio.length / (count * 2));
+    const stepSize = Math.max(1000, Math.floor(audio.length / (count * 2)));
     
     for (let i = 0; i < audio.length - stepSize; i += stepSize) {
         // Вычисляем изменение амплитуды
         let diff = 0;
-        for (let j = 0; j < Math.min(100, stepSize); j++) {
-            diff += Math.abs(audio[i + j] - audio[i + j + 1]);
+        const sampleSize = Math.min(500, stepSize);
+        for (let j = 0; j < sampleSize; j++) {
+            if (i + j + 1 < audio.length) {
+                diff += Math.abs(audio[i + j] - audio[i + j + 1]);
+            }
         }
         
         points.push({ pos: i, energy: diff });
@@ -207,7 +228,7 @@ function findInterestingPoints(audio, count) {
     
     // Сортируем по энергии и берем самые интересные
     points.sort((a, b) => b.energy - a.energy);
-    return points.slice(0, count).map(p => p.pos);
+    return points.slice(0, Math.min(count, points.length)).map(p => p.pos);
 }
 
 function hexSwap(audio1, audio2, intensity) {
