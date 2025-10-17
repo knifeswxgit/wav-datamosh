@@ -144,30 +144,30 @@ async function datamoshWav(buffer1, buffer2, method, intensity, glitchSize) {
     return new Blob([finalData], { type: 'audio/wav' });
 }
 
-// Smart Datamosh - агрессивно смешивает файлы с музыкальными глитчами
+// Smart Datamosh - музыкально смешивает файлы с мягкими переходами
 function smartDatamosh(audio1, audio2, intensity, glitchSize) {
     const result = new Uint8Array(audio1.length);
     result.set(audio1);
     
-    // Размеры глитчей в зависимости от настройки (намного больше!)
+    // Размеры глитчей - более музыкальные
     const glitchSizes = {
-        1: [5000, 20000],      // Small: короткие куски
-        2: [20000, 80000],     // Medium: средние куски
-        3: [80000, 200000]     // Large: длинные куски
+        1: [8000, 30000],      // Small: ~0.2-0.7 сек
+        2: [30000, 100000],    // Medium: ~0.7-2.3 сек
+        3: [100000, 250000]    // Large: ~2.3-5.7 сек
     };
     
     const [minSize, maxSize] = glitchSizes[glitchSize];
     
-    // Намного больше глитчей в зависимости от интенсивности
-    const numGlitches = Math.floor((intensity / 100) * 100) + 20; // От 20 до 120 глитчей
+    // Количество глитчей
+    const numGlitches = Math.floor((intensity / 100) * 60) + 15; // От 15 до 75 глитчей
     
     // Находим "интересные" места в аудио
     const interestingPoints = findInterestingPoints(audio1, numGlitches * 2);
     
     for (let i = 0; i < numGlitches; i++) {
-        // Выбираем случайную интересную точку или просто случайную
+        // Выбираем случайную интересную точку
         let startPos;
-        if (Math.random() < 0.7 && interestingPoints.length > 0) {
+        if (Math.random() < 0.8 && interestingPoints.length > 0) {
             const pointIndex = Math.floor(Math.random() * interestingPoints.length);
             startPos = interestingPoints[pointIndex];
         } else {
@@ -181,26 +181,43 @@ function smartDatamosh(audio1, audio2, intensity, glitchSize) {
         // Случайная позиция из второго файла
         const sourcePos = Math.floor(Math.random() * Math.max(1, audio2.length - glitchLength));
         
-        // Копируем кусок из второго файла
+        // Размер fade для плавных переходов
+        const fadeLength = Math.min(500, Math.floor(glitchLength * 0.1));
+        
+        // Копируем кусок из второго файла с плавными переходами
         if (sourcePos >= 0 && sourcePos < audio2.length) {
             for (let j = 0; j < glitchLength && startPos + j < endPos; j++) {
                 const srcIdx = Math.min(sourcePos + j, audio2.length - 1);
                 
-                // Разные типы hex-манипуляций для разнообразия
-                const glitchType = Math.random();
-                if (glitchType < 0.5) {
-                    // Прямая замена
-                    result[startPos + j] = audio2[srcIdx];
-                } else if (glitchType < 0.7) {
-                    // XOR для глитча
-                    result[startPos + j] = audio2[srcIdx] ^ 0xFF;
-                } else if (glitchType < 0.85) {
-                    // Смешивание двух файлов
-                    result[startPos + j] = (audio1[startPos + j] + audio2[srcIdx]) >> 1;
-                } else {
-                    // Битовый сдвиг
-                    result[startPos + j] = (audio2[srcIdx] << 1) | (audio2[srcIdx] >> 7);
+                // Плавный fade in/out
+                let mixAmount = 1.0;
+                if (j < fadeLength) {
+                    // Fade in
+                    mixAmount = j / fadeLength;
+                } else if (j > glitchLength - fadeLength) {
+                    // Fade out
+                    mixAmount = (glitchLength - j) / fadeLength;
                 }
+                
+                // Выбираем тип глитча (более мягкие варианты)
+                const glitchType = Math.random();
+                let newValue;
+                
+                if (glitchType < 0.6) {
+                    // Прямая замена с fade
+                    newValue = audio2[srcIdx];
+                } else if (glitchType < 0.9) {
+                    // Смешивание двух файлов
+                    newValue = Math.floor((audio1[startPos + j] + audio2[srcIdx]) / 2);
+                } else {
+                    // Легкий XOR только на некоторых битах
+                    newValue = audio2[srcIdx] ^ 0x0F; // Мягкий XOR
+                }
+                
+                // Применяем fade
+                result[startPos + j] = Math.floor(
+                    audio1[startPos + j] * (1 - mixAmount) + newValue * mixAmount
+                );
             }
         }
     }
