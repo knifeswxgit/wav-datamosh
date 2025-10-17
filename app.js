@@ -142,9 +142,6 @@ async function datamoshWav(buffer1, buffer2, method, intensity, glitchSize) {
         case 'smart-datamosh':
             result = smartDatamosh(audio1, audio2, intensity, glitchSize, bitDepth);
             break;
-        case 'hex-swap':
-            result = hexSwap(audio1, audio2, intensity);
-            break;
         case 'chunk-mix':
             result = chunkMix(audio1, audio2, intensity, glitchSize);
             break;
@@ -316,20 +313,7 @@ function findInterestingPoints(audio, count) {
     return points.slice(0, Math.min(count, points.length)).map(p => p.pos);
 }
 
-function hexSwap(audio1, audio2, intensity) {
-    const result = new Uint8Array(audio1.length);
-    const swapRate = intensity / 100;
-    
-    for (let i = 0; i < audio1.length; i++) {
-        if (i < audio2.length && Math.random() < swapRate) {
-            result[i] = audio2[i];
-        } else {
-            result[i] = audio1[i];
-        }
-    }
-    
-    return result;
-}
+
 
 function chunkMix(audio1, audio2, intensity, glitchSize) {
     const result = new Uint8Array(audio1.length);
