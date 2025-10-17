@@ -21,12 +21,20 @@ const downloadBtn = document.getElementById('download-btn');
 const methodSelect = document.getElementById('method');
 const intensitySlider = document.getElementById('intensity');
 const intensityValue = document.getElementById('intensity-value');
+const glitchSizeSlider = document.getElementById('glitch-size');
+const glitchSizeValue = document.getElementById('size-value');
 const resultDiv = document.getElementById('result');
 const loadingDiv = document.getElementById('loading');
 
 // Update intensity display
 intensitySlider.addEventListener('input', (e) => {
     intensityValue.textContent = e.target.value;
+});
+
+// Update glitch size display
+glitchSizeSlider.addEventListener('input', (e) => {
+    const sizes = ['Small', 'Medium', 'Large'];
+    glitchSizeValue.textContent = sizes[e.target.value - 1];
 });
 
 // File 1 handler
@@ -67,8 +75,9 @@ processBtn.addEventListener('click', async () => {
         try {
             const method = methodSelect.value;
             const intensity = parseInt(intensitySlider.value);
+            const glitchSize = parseInt(glitchSizeSlider.value);
             
-            resultBlob = await datamoshWav(file1Data, file2Data, method, intensity);
+            resultBlob = await datamoshWav(file1Data, file2Data, method, intensity, glitchSize);
             
             loadingDiv.classList.add('hidden');
             resultDiv.classList.remove('hidden');
@@ -102,7 +111,7 @@ downloadBtn.addEventListener('click', async () => {
 });
 
 // Datamosh functions
-async function datamoshWav(buffer1, buffer2, method, intensity) {
+async function datamoshWav(buffer1, buffer2, method, intensity, glitchSize) {
     const data1 = new Uint8Array(buffer1);
     const data2 = new Uint8Array(buffer2);
     
@@ -114,20 +123,17 @@ async function datamoshWav(buffer1, buffer2, method, intensity) {
     let result;
     
     switch (method) {
+        case 'smart-datamosh':
+            result = smartDatamosh(audio1, audio2, intensity, glitchSize);
+            break;
         case 'hex-swap':
             result = hexSwap(audio1, audio2, intensity);
             break;
-        case 'byte-replace':
-            result = byteReplace(audio1, audio2, intensity);
-            break;
         case 'chunk-mix':
-            result = chunkMix(audio1, audio2, intensity);
+            result = chunkMix(audio1, audio2, intensity, glitchSize);
             break;
-        case 'header-corrupt':
-            result = headerCorrupt(header1, audio1, intensity);
-            return new Blob([result], { type: 'audio/wav' });
         default:
-            result = hexSwap(audio1, audio2, intensity);
+            result = smartDatamosh(audio1, audio2, intensity, glitchSize);
     }
     
     // Combine header with processed audio
@@ -136,6 +142,72 @@ async function datamoshWav(buffer1, buffer2, method, intensity) {
     finalData.set(result, header1.length);
     
     return new Blob([finalData], { type: 'audio/wav' });
+}
+
+// Smart Datamosh - анализирует аудио и создает музыкальные глитчи
+function smartDatamosh(audio1, audio2, intensity, glitchSize) {
+    const result = new Uint8Array(audio1.length);
+    result.set(audio1);
+    
+    // Размеры глитчей в зависимости от настройки
+    const glitchSizes = {
+        1: [200, 800],      // Small: короткие глитчи
+        2: [800, 3000],     // Medium: средние глитчи
+        3: [3000, 8000]     // Large: длинные глитчи
+    };
+    
+    const [minSize, maxSize] = glitchSizes[glitchSize];
+    const numGlitches = Math.floor((intensity / 100) * 50); // До 50 глитчей
+    
+    // Находим "интересные" места в аудио (где амплитуда меняется)
+    const interestingPoints = findInterestingPoints(audio1, numGlitches * 3);
+    
+    for (let i = 0; i < numGlitches; i++) {
+        // Выбираем случайную интересную точку
+        const pointIndex = Math.floor(Math.random() * interestingPoints.length);
+        const startPos = interestingPoints[pointIndex];
+        
+        // Случайный размер глитча
+        const glitchLength = Math.floor(Math.random() * (maxSize - minSize)) + minSize;
+        const endPos = Math.min(startPos + glitchLength, audio1.length);
+        
+        // Случайная позиция из второго файла
+        const sourcePos = Math.floor(Math.random() * (audio2.length - glitchLength));
+        
+        // Копируем кусок из второго файла
+        if (sourcePos >= 0 && sourcePos + glitchLength <= audio2.length) {
+            for (let j = 0; j < glitchLength && startPos + j < endPos; j++) {
+                // Иногда делаем hex-манипуляции для дополнительного эффекта
+                if (Math.random() < 0.3) {
+                    result[startPos + j] = audio2[sourcePos + j] ^ 0xFF; // XOR для глитча
+                } else {
+                    result[startPos + j] = audio2[sourcePos + j];
+                }
+            }
+        }
+    }
+    
+    return result;
+}
+
+// Находит точки с большими изменениями амплитуды (биты, удары)
+function findInterestingPoints(audio, count) {
+    const points = [];
+    const stepSize = Math.floor(audio.length / (count * 2));
+    
+    for (let i = 0; i < audio.length - stepSize; i += stepSize) {
+        // Вычисляем изменение амплитуды
+        let diff = 0;
+        for (let j = 0; j < Math.min(100, stepSize); j++) {
+            diff += Math.abs(audio[i + j] - audio[i + j + 1]);
+        }
+        
+        points.push({ pos: i, energy: diff });
+    }
+    
+    // Сортируем по энергии и берем самые интересные
+    points.sort((a, b) => b.energy - a.energy);
+    return points.slice(0, count).map(p => p.pos);
 }
 
 function hexSwap(audio1, audio2, intensity) {
@@ -153,26 +225,17 @@ function hexSwap(audio1, audio2, intensity) {
     return result;
 }
 
-function byteReplace(audio1, audio2, intensity) {
+function chunkMix(audio1, audio2, intensity, glitchSize) {
     const result = new Uint8Array(audio1.length);
-    const replaceAmount = Math.floor((audio1.length * intensity) / 100);
     
-    result.set(audio1);
-    
-    for (let i = 0; i < replaceAmount; i++) {
-        const pos = Math.floor(Math.random() * audio1.length);
-        const sourcePos = Math.floor(Math.random() * audio2.length);
-        if (sourcePos < audio2.length) {
-            result[pos] = audio2[sourcePos];
-        }
-    }
-    
-    return result;
-}
-
-function chunkMix(audio1, audio2, intensity) {
-    const result = new Uint8Array(audio1.length);
-    const chunkSize = Math.max(100, Math.floor(audio1.length / (intensity * 2)));
+    // Размер кусков зависит от glitchSize
+    const baseSizes = {
+        1: 500,
+        2: 2000,
+        3: 5000
+    };
+    const baseChunkSize = baseSizes[glitchSize];
+    const chunkSize = Math.max(100, Math.floor(baseChunkSize / (intensity / 50)));
     
     let useFile1 = true;
     
@@ -192,24 +255,6 @@ function chunkMix(audio1, audio2, intensity) {
             useFile1 = !useFile1;
         }
     }
-    
-    return result;
-}
-
-function headerCorrupt(header, audio, intensity) {
-    const result = new Uint8Array(header.length + audio.length);
-    const corruptedHeader = new Uint8Array(header);
-    
-    // Corrupt some header bytes (skip first 12 bytes - RIFF header)
-    const corruptCount = Math.floor((header.length - 12) * intensity / 200);
-    
-    for (let i = 0; i < corruptCount; i++) {
-        const pos = 12 + Math.floor(Math.random() * (header.length - 12));
-        corruptedHeader[pos] = Math.floor(Math.random() * 256);
-    }
-    
-    result.set(corruptedHeader, 0);
-    result.set(audio, header.length);
     
     return result;
 }
