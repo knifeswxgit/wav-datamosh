@@ -18,7 +18,6 @@ const file1Name = document.getElementById('file1-name');
 const file2Name = document.getElementById('file2-name');
 const processBtn = document.getElementById('process-btn');
 const downloadBtn = document.getElementById('download-btn');
-const methodSelect = document.getElementById('method');
 const intensitySlider = document.getElementById('intensity');
 const intensityValue = document.getElementById('intensity-value');
 const glitchSizeSlider = document.getElementById('glitch-size');
@@ -73,11 +72,10 @@ processBtn.addEventListener('click', async () => {
     
     setTimeout(async () => {
         try {
-            const method = methodSelect.value;
             const intensity = parseInt(intensitySlider.value);
             const glitchSize = parseInt(glitchSizeSlider.value);
             
-            resultBlob = await datamoshWav(file1Data, file2Data, method, intensity, glitchSize);
+            resultBlob = await datamoshWav(file1Data, file2Data, intensity, glitchSize);
             
             loadingDiv.classList.add('hidden');
             resultDiv.classList.remove('hidden');
@@ -118,7 +116,7 @@ function getWavBitDepth(data) {
 }
 
 // Datamosh functions
-async function datamoshWav(buffer1, buffer2, method, intensity, glitchSize) {
+async function datamoshWav(buffer1, buffer2, intensity, glitchSize) {
     const data1 = new Uint8Array(buffer1);
     const data2 = new Uint8Array(buffer2);
     
@@ -136,18 +134,8 @@ async function datamoshWav(buffer1, buffer2, method, intensity, glitchSize) {
     const audio1 = data1.slice(44);
     const audio2 = data2.slice(44);
     
-    let result;
-    
-    switch (method) {
-        case 'smart-datamosh':
-            result = smartDatamosh(audio1, audio2, intensity, glitchSize, bitDepth);
-            break;
-        case 'chunk-mix':
-            result = chunkMix(audio1, audio2, intensity, glitchSize);
-            break;
-        default:
-            result = smartDatamosh(audio1, audio2, intensity, glitchSize, bitDepth);
-    }
+    // Используем только chunk-mix
+    const result = chunkMix(audio1, audio2, intensity, glitchSize);
     
     // Combine header with processed audio
     const finalData = new Uint8Array(header1.length + result.length);
