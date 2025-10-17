@@ -82,18 +82,27 @@ processBtn.addEventListener('click', async () => {
     }, 500);
 });
 
-// Download button handler
-downloadBtn.addEventListener('click', () => {
+// Download button handler - send to Telegram
+downloadBtn.addEventListener('click', async () => {
     if (resultBlob) {
-        const url = URL.createObjectURL(resultBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `datamoshed_${Date.now()}.wav`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        tg.HapticFeedback.impactOccurred('heavy');
+        tg.HapticFeedback.impactOccurred('medium');
+        
+        // Convert blob to base64
+        const reader = new FileReader();
+        reader.onloadend = function() {
+            const base64data = reader.result.split(',')[1];
+            
+            // Send file data back to bot
+            tg.sendData(JSON.stringify({
+                action: 'send_file',
+                filename: `datamoshed_${Date.now()}.wav`,
+                data: base64data
+            }));
+            
+            tg.showAlert('✓ File sent to chat!');
+            tg.HapticFeedback.notificationOccurred('success');
+        };
+        reader.readAsDataURL(resultBlob);
     }
 });
 
