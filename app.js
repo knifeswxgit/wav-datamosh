@@ -110,10 +110,26 @@ downloadBtn.addEventListener('click', async () => {
     }
 });
 
+// Определяем битность WAV файла из заголовка
+function getWavBitDepth(data) {
+    // Байты 34-35 содержат BitsPerSample
+    const bitDepth = data[34] | (data[35] << 8);
+    return bitDepth;
+}
+
 // Datamosh functions
 async function datamoshWav(buffer1, buffer2, method, intensity, glitchSize) {
     const data1 = new Uint8Array(buffer1);
     const data2 = new Uint8Array(buffer2);
+    
+    // Определяем битность
+    const bitDepth1 = getWavBitDepth(data1);
+    const bitDepth2 = getWavBitDepth(data2);
+    
+    console.log(`File 1: ${bitDepth1}-bit, File 2: ${bitDepth2}-bit`);
+    
+    // Используем битность первого файла
+    const bitDepth = bitDepth1;
     
     // Parse WAV headers
     const header1 = data1.slice(0, 44);
@@ -124,7 +140,7 @@ async function datamoshWav(buffer1, buffer2, method, intensity, glitchSize) {
     
     switch (method) {
         case 'smart-datamosh':
-            result = smartDatamosh(audio1, audio2, intensity, glitchSize);
+            result = smartDatamosh(audio1, audio2, intensity, glitchSize, bitDepth);
             break;
         case 'hex-swap':
             result = hexSwap(audio1, audio2, intensity);
@@ -133,7 +149,7 @@ async function datamoshWav(buffer1, buffer2, method, intensity, glitchSize) {
             result = chunkMix(audio1, audio2, intensity, glitchSize);
             break;
         default:
-            result = smartDatamosh(audio1, audio2, intensity, glitchSize);
+            result = smartDatamosh(audio1, audio2, intensity, glitchSize, bitDepth);
     }
     
     // Combine header with processed audio
@@ -145,11 +161,46 @@ async function datamoshWav(buffer1, buffer2, method, intensity, glitchSize) {
 }
 
 // Smart Datamosh - музыкально смешивает файлы с мягкими переходами
-function smartDatamosh(audio1, audio2, intensity, glitchSize) {
-    // Работаем с 16-битными сэмплами (2 байта на сэмпл)
-    const samples1 = new Int16Array(audio1.buffer, audio1.byteOffset, audio1.length / 2);
-    const samples2 = new Int16Array(audio2.buffer, audio2.byteOffset, audio2.length / 2);
-    const resultSamples = new Int16Array(samples1.length);
+function smartDatamosh(audio1, audio2, intensity, glitchSize, bitDepth = 16) {
+    let samples1, samples2, resultSamples;
+    let bytesPerSample, minValue, maxValue;
+    
+    // Определяем тип данных в зависимости от битности
+    if (bitDepth === 16) {
+        bytesPerSample = 2;
+        samples1 = new Int16Array(audio1.buffer, audio1.byteOffset, audio1.length / 2);
+        samples2 = new Int16Array(audio2.buffer, audio2.byteOffset, audio2.length / 2);
+        resultSamples = new Int16Array(samples1.length);
+        minValue = -32768;
+        maxValue = 32767;
+    } else if (bitDepth === 24) {
+        // 24-бит обрабатываем как 32-бит для удобства
+        bytesPerSample = 3;
+        // Для 24-бит используем Int32Array и читаем по 3 байта
+        const numSamples1 = Math.floor(audio1.length / 3);
+        const numSamples2 = Math.floor(audio2.length / 3);
+        samples1 = new Int32Array(numSamples1);
+        samples2 = new Int32Array(numSamples2);
+        resultSamples = new Int32Array(numSamples1);
+        
+        // Читаем 24-битные сэмплы
+        for (let i = 0; i < numSamples1; i++) {
+            const offset = i * 3;
+            samples1[i] = (audio1[offset] | (audio1[offset + 1] << 8) | (audio1[offset + 2] << 16)) << 8 >> 8;
+        }
+        for (let i = 0; i < numSamples2; i++) {
+            const offset = i * 3;
+            samples2[i] = (audio2[offset] | (audio2[offset + 1] << 8) | (audio2[offset + 2] << 16)) << 8 >> 8;
+        }
+        
+        minValue = -8388608;
+        maxValue = 8388607;
+    } else {
+        // Fallback на 16-бит
+        console.warn(`Unsupported bit depth: ${bitDepth}, using 16-bit`);
+        return smartDatamosh(audio1, audio2, intensity, glitchSize, 16);
+    }
+    
     resultSamples.set(samples1);
     
     // Размеры глитчей в сэмплах (44100 Hz = 44100 сэмплов в секунду)
@@ -164,7 +215,7 @@ function smartDatamosh(audio1, audio2, intensity, glitchSize) {
     
     for (let i = 0; i < numGlitches; i++) {
         // Случайная позиция
-        const startPos = Math.floor(Math.random() * (samples1.length - maxSize));
+        const startPos = Math.floor(Math.random() * Math.max(1, samples1.length - maxSize));
         const glitchLength = Math.floor(Math.random() * (maxSize - minSize)) + minSize;
         const endPos = Math.min(startPos + glitchLength, samples1.length);
         
@@ -178,13 +229,11 @@ function smartDatamosh(audio1, audio2, intensity, glitchSize) {
             for (let j = 0; j < glitchLength && startPos + j < endPos; j++) {
                 const srcIdx = Math.min(sourcePos + j, samples2.length - 1);
                 
-                // Плавный fade in/out (косинусная кривая для более плавного звучания)
+                // Плавный fade in/out (косинусная кривая)
                 let mixAmount = 1.0;
                 if (j < fadeLength) {
-                    // Fade in (косинусная кривая)
                     mixAmount = (1 - Math.cos((j / fadeLength) * Math.PI)) / 2;
                 } else if (j > glitchLength - fadeLength) {
-                    // Fade out (косинусная кривая)
                     mixAmount = (1 + Math.cos(((j - (glitchLength - fadeLength)) / fadeLength) * Math.PI)) / 2;
                 }
                 
@@ -193,13 +242,10 @@ function smartDatamosh(audio1, audio2, intensity, glitchSize) {
                 let newValue;
                 
                 if (glitchType < 0.7) {
-                    // Прямая замена
                     newValue = samples2[srcIdx];
                 } else if (glitchType < 0.95) {
-                    // Смешивание двух файлов
                     newValue = Math.floor((samples1[startPos + j] + samples2[srcIdx]) / 2);
                 } else {
-                    // Легкий битовый глитч (инвертируем только младшие биты)
                     newValue = samples2[srcIdx] ^ 0x00FF;
                 }
                 
@@ -208,14 +254,25 @@ function smartDatamosh(audio1, audio2, intensity, glitchSize) {
                     samples1[startPos + j] * (1 - mixAmount) + newValue * mixAmount
                 );
                 
-                // Ограничиваем значение чтобы не было клиппинга
-                resultSamples[startPos + j] = Math.max(-32768, Math.min(32767, mixed));
+                resultSamples[startPos + j] = Math.max(minValue, Math.min(maxValue, mixed));
             }
         }
     }
     
     // Конвертируем обратно в Uint8Array
-    return new Uint8Array(resultSamples.buffer);
+    if (bitDepth === 24) {
+        // Конвертируем 24-бит обратно
+        const result = new Uint8Array(resultSamples.length * 3);
+        for (let i = 0; i < resultSamples.length; i++) {
+            const sample = resultSamples[i];
+            result[i * 3] = sample & 0xFF;
+            result[i * 3 + 1] = (sample >> 8) & 0xFF;
+            result[i * 3 + 2] = (sample >> 16) & 0xFF;
+        }
+        return result;
+    } else {
+        return new Uint8Array(resultSamples.buffer);
+    }
 }
 
 // Находит точки с большими изменениями амплитуды (биты, удары)
